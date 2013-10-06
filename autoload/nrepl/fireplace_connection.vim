@@ -195,10 +195,34 @@ function! s:nrepl_call(payload) dict abort
   throw 'nREPL: '.split(out, "\n")[0]
 endfunction
 
+" TODO: hack to get load_file to work
+function! s:buffer_contents ()
+  return join(getline(1, '$'), "\n")
+endfunction
+
+function! s:nrepl_load_file () dict abort
+" TODO isn't there an easy way to get the contents of a buffer?
+
+  let payload = {"op": "load-file",
+        \ "file": s:buffer_contents(),
+        \ "file-name": fnamemodify(bufname('%'), ':t'),
+        \ "file-path": expand('%:p')}
+
+  let payload.session = self.session
+
+  "echo payload
+" TODO file-path should be source-root-relative; tough to reliably determine
+" just looking at files. Go get the classpath of each opened session and look
+" for longest prefixing path?
+  "let payload = nrepl#fireplace_connection#bencode(payload)
+  return self.process(payload)
+endfunction
+
 let s:nrepl = {
       \ 'call': s:function('s:nrepl_call'),
       \ 'eval': s:function('s:nrepl_eval'),
       \ 'path': s:function('s:nrepl_path'),
+      \ 'load_file': s:function('s:nrepl_load_file'),
       \ 'process': s:function('s:nrepl_process')}
 
 if !has('python')

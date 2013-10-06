@@ -527,6 +527,52 @@ function! fireplace#eval(expr) abort
   return fireplace#session_eval(a:expr)
 endfunction
 
+let s:cljs_repl_loaded = 0
+
+function! fireplace#load_file() abort
+
+  let path = fnamemodify(exists('b:java_root') ? b:java_root : fnamemodify(expand('%'), ':p:s?.*\zs[\/]src[\/].*??'), ':~')
+  let client = s:client()
+
+  if !s:cljs_repl_loaded
+    echo "vim might hang here, refresh your browser to attach browser repl"
+    call client.connection.eval('(cemerick.austin.repls/cljs-repl' .
+          \ '(reset! cemerick.austin.repls/browser-repl-env' .
+          \ '(cemerick.austin/repl-env)))')
+    let s:cljs_repl_loaded = 1
+  endif
+
+  let response = client.connection.load_file()
+
+  "if !empty(get(response, 'value', ''))
+    "call insert(s:history, {'buffer': bufnr(''), 'code': a:expr, 'ns': fireplace#ns(), 'response': response})
+  "endif
+  "if len(s:history) > &history
+    "call remove(s:history, &history, -1)
+  "endif
+
+  if !empty(get(response, 'stacktrace', []))
+    let nr = 0
+    if has_key(s:qffiles, expand('%:p'))
+      let nr = winbufnr(s:qffiles[expand('%:p')].buffer)
+    endif
+    if nr != -1
+      call setloclist(nr, fireplace#quickfix_for(response.stacktrace))
+    endif
+  endif
+
+  call s:output_response(response)
+
+  if get(response, 'ex', '') !=# ''
+    let err = 'Clojure: '.response.ex
+  elseif has_key(response, 'value')
+    return response.value
+  else
+    let err = 'fireplace.vim: Something went wrong: '.string(response)
+  endif
+  throw err
+endfunction
+
 function! fireplace#echo_session_eval(expr) abort
   try
     echo fireplace#session_eval(a:expr)
