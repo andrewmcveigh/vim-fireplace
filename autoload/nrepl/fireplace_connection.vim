@@ -200,7 +200,7 @@ function! s:buffer_contents ()
   return join(getline(1, '$'), "\n")
 endfunction
 
-function! s:nrepl_load_file () dict abort
+function! s:nrepl_load_file (session) dict abort
 " TODO isn't there an easy way to get the contents of a buffer?
 
   let payload = {"op": "load-file",
@@ -208,14 +208,12 @@ function! s:nrepl_load_file () dict abort
         \ "file-name": fnamemodify(bufname('%'), ':t'),
         \ "file-path": expand('%:p')}
 
-  let payload.session = self.session
-
-  "echo payload
-" TODO file-path should be source-root-relative; tough to reliably determine
-" just looking at files. Go get the classpath of each opened session and look
-" for longest prefixing path?
-  "let payload = nrepl#fireplace_connection#bencode(payload)
-  return self.process(payload)
+  if a:session
+    let payload.session = a:session
+    return self.process(payload)
+  else
+    throw 'no session provided'
+  endif
 endfunction
 
 let s:nrepl = {

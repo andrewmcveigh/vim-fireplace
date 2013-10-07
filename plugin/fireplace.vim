@@ -527,22 +527,25 @@ function! fireplace#eval(expr) abort
   return fireplace#session_eval(a:expr)
 endfunction
 
-let s:cljs_repl_loaded = 0
+let g:cljs_repl_session = 0
 
 function! fireplace#load_file() abort
 
   let path = fnamemodify(exists('b:java_root') ? b:java_root : fnamemodify(expand('%'), ':p:s?.*\zs[\/]src[\/].*??'), ':~')
   let client = s:client()
 
-  if !s:cljs_repl_loaded
+  if !g:cljs_repl_session
+    let g:cljs_repl_session = client.connection.process({'op': 'clone'})['new-session']
+    let old_session = client.connection.session
+    let client.connection.session = g:cljs_repl_session
     echo "vim might hang here, refresh your browser to attach browser repl"
     call client.connection.eval('(cemerick.austin.repls/cljs-repl' .
           \ '(reset! cemerick.austin.repls/browser-repl-env' .
           \ '(cemerick.austin/repl-env)))')
-    let s:cljs_repl_loaded = 1
+    let client.connection.session = old_session
   endif
 
-  let response = client.connection.load_file()
+  let response = client.connection.load_file(g:cljs_repl_session)
 
   "if !empty(get(response, 'value', ''))
     "call insert(s:history, {'buffer': bufnr(''), 'code': a:expr, 'ns': fireplace#ns(), 'response': response})
