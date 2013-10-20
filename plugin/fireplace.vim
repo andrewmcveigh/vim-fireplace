@@ -8,9 +8,22 @@ let g:loaded_fireplace = 1
 
 " File type {{{1
 
+let g:cljs = 0
+
+function! s:filetype_clj()
+  let g:cljs = 0
+  setfiletype clojure
+endfunction
+
+function! s:filetype_cljs()
+  let g:cljs = 1
+  setfiletype clojure
+endfunction
+
 augroup fireplace_file_type
   autocmd!
-  autocmd BufNewFile,BufReadPost *.clj setfiletype clojure
+  autocmd BufNewFile,BufReadPost,BufEnter *.clj call s:filetype_clj()
+  autocmd BufNewFile,BufReadPost,BufEnter *.cljs call s:filetype_cljs()
 augroup END
 
 " }}}1
@@ -529,26 +542,96 @@ endfunction
 
 """ Clojurescript support
 
-let g:cljs_repl_session = 0
+if !exists("g:cljs_repl_session")
+  let g:cljs_repl_session = 0
+  let g:browser_repl_server = ''
+endif
 
-function! fireplace#cljs_client()
+function! s:chrome_load_script(url)
+  return "tell application \"Google Chrome\"\n" .
+        \ "set theUrl to " . a:url . "\n" .
+        \ "if (count every window) = 0 then\n" .
+        \ "make new window\n" .
+        \ "end if\n" .
+        \ "set found to false\n" .
+        \ "set theTabIndex to -1\n" .
+        \ "repeat with theWindow in every window\n" .
+        \ "set theTabIndex to 0\n" .
+        \ "repeat with theTab in every tab of theWindow\n" .
+        \ "set theTabIndex to theTabIndex + 1\n" .
+        \ "if theTab's URL = theUrl then\n" .
+        \ "set found to true\n" .
+        \ "exit\n" .
+        \ "end if\n" .
+        \ "end repeat\n" .
+        \ "if found then\n" .
+        \ "exit repeat\n" .
+        \ "end if\n" .
+        \ "end repeat\n" .
+        \ "if found then\n" .
+        \ "tell theTab to reload\n" .
+        \ "set theWindow's active tab index to theTabIndex\n" .
+        \ "set index of theWindow to 1\n" .
+        \ "else\n" .
+        \ "tell window 1 to make new tab with properties {URL:theUrl}\n" .
+        \ "end if\n" .
+        \ "end tell"
+endfunction
+
+function! s:cljs_client ()
   let client = s:client()
   if !g:cljs_repl_session
     let g:cljs_repl_session = client.connection.process({'op': 'clone'})['new-session']
-    echo "new cljs repl session started: ".g:cljs_repl_session
+
+    "echo "new cljs repl session started: ".g:cljs_repl_session
+
     let old_session = client.connection.session
     let client.connection.session = g:cljs_repl_session
-    echo "vim might hang here, refresh your browser to attach browser repl"
-    let payload = {"op": "load-file",
-          \ "file": '(cemerick.austin.repls/cljs-repl' .
-          \ '(reset! cemerick.austin.repls/browser-repl-env' .
-          \ '(cemerick.austin/repl-env)))',
-          \ "file-name": fnamemodify(bufname('%'), ':t'),
-          \ "file-path": expand('%:p')}
-    call client.connection.process(payload)
+
+    let payload = {"op": "eval", "code": "(austin-exec)", "ns": "user", "session": g:cljs_repl_session}
+    let response = client.connection.process(payload)
+
+    let g:browser_repl_server =
+          \ matchlist(
+          \split(response.out, '\n')[0],
+          \ '\v^Browser-REPL ready \@ (.*)$')[1]
+
     let client.connection.session = old_session
   endif
   return client
+endfunction
+
+function! fireplace#connect_chrome_repl()
+  if system('which chrome-load-url') != ''
+    if g:browser_repl_server != ''
+      call system('chrome-load-url ' . g:browser_repl_server)
+    else
+      call s:cljs_client()
+      call system('chrome-load-url ' . g:browser_repl_server)
+    endif
+  else
+    throw "Can't find chrome"
+  endif
+endfunction
+
+function! fireplace#ls_sessions()
+  let client = s:cljs_client()
+  let payload = {"op": "ls-sessions"}
+  let response = client.connection.process(payload)
+  return response.sessions
+endfunction
+
+function! fireplace#close_session(session)
+  let client = s:cljs_client()
+  let payload = {"op": "close", "session": a:session}
+  let response = client.connection.process(payload)
+  return response
+endfunction
+
+function! fireplace#close_open_sessions()
+  for session in fireplace#ls_sessions()
+    echo fireplace#close_session(session)
+  endfor
 endfunction
 
 function! s:get_expr(start, end)
@@ -606,7 +689,7 @@ function! s:get_current_expr()
 endfunction
 
 function! fireplace#cljs_eval_expr()
-  let client = fireplace#cljs_client()
+  let client = s:cljs_client()
 
   let response = client.connection.cljs_eval(
         \ g:cljs_repl_session,
@@ -617,7 +700,7 @@ function! fireplace#cljs_eval_expr()
 endfunction
 
 function! fireplace#cljs_load_file()
-  let client = fireplace#cljs_client()
+  let client = s:cljs_client()
   let pos = getpos('.')
   let buf = getline(1, '$')
 
@@ -631,7 +714,7 @@ function! fireplace#cljs_load_file()
 endfunction
 
 function! fireplace#cljs_doc() abort
-  let client = fireplace#cljs_client()
+  let client = s:cljs_client()
 
   let response = client.connection.cljs_eval(
         \ g:cljs_repl_session,
@@ -642,7 +725,7 @@ function! fireplace#cljs_doc() abort
 endfunction
 
 function! fireplace#cljs_source() abort
-  let client = fireplace#cljs_client()
+  let client = s:cljs_client()
 
   let response = client.connection.cljs_eval(
         \ g:cljs_repl_session,
@@ -653,7 +736,7 @@ function! fireplace#cljs_source() abort
 endfunction
 
 function! fireplace#cljs_macroexpand() abort
-  let client = fireplace#cljs_client()
+  let client = s:cljs_client()
 
   let response = client.connection.cljs_eval(
         \ g:cljs_repl_session,
@@ -663,6 +746,29 @@ function! fireplace#cljs_macroexpand() abort
         \ [')))'])
 
   call s:respond(response)
+endfunction
+
+function! fireplace#cljs_find_file()
+  let client = s:cljs_client()
+  let w = expand('<cword>')
+
+  let cmd =
+        \ '(when-let [v (resolve ' . s:qsym(w) .')]' .
+        \ '  (when-let [filepath (:file (meta v))]' .
+        \ '    (when-let [url (.getResource (clojure.lang.RT/baseLoader) filepath)]' .
+        \ '      [(str url)' .
+        \ '       (:line (meta v))])))'
+
+  let location = client.connection.cljs_eval(
+        \ g:cljs_repl_session,
+        \ s:ns_form(),
+        \ [cmd])
+  echo location
+endfunction
+
+function! fireplace#cljs_reset_session()
+  g:cljs_repl_session = 0
+  g:browser_repl_server = ''
 endfunction
 
 """ End Clojurescript support
@@ -914,6 +1020,30 @@ nnoremap          <Plug>FireplacePrompt :exe <SID>inputeval()<CR>
 
 noremap!          <Plug>FireplaceRecall <C-R>=<SID>recall()<CR>
 
+""" Clojurescript plugs
+
+nnoremap <silent> <Plug>CljsFireplacePrintLast :exe <SID>print_last()<CR>
+nnoremap <silent> <Plug>CljsFireplacePrint  :<C-U>set opfunc=<SID>printop<CR>g@
+xnoremap <silent> <Plug>CljsFireplacePrint  :<C-U>call <SID>printop(visualmode())<CR>
+
+nnoremap <silent> <Plug>CljsFireplaceFilter :<C-U>set opfunc=<SID>filterop<CR>g@
+xnoremap <silent> <Plug>CljsFireplaceFilter :<C-U>call <SID>filterop(visualmode())<CR>
+
+nnoremap <silent> <Plug>CljsFireplaceMacroExpand  :<C-U>set opfunc=<SID>macroexpandop<CR>g@
+xnoremap <silent> <Plug>CljsFireplaceMacroExpand  :<C-U>call <SID>macroexpandop(visualmode())<CR>
+nnoremap <silent> <Plug>CljsFireplaceMacroExpand1 :<C-U>set opfunc=<SID>macroexpand1op<CR>g@
+xnoremap <silent> <Plug>CljsFireplaceMacroExpand1 :<C-U>call <SID>macroexpand1op(visualmode())<CR>
+
+nnoremap <silent> <Plug>CljsFireplaceEdit   :<C-U>set opfunc=<SID>editop<CR>g@
+xnoremap <silent> <Plug>CljsFireplaceEdit   :<C-U>call <SID>editop(visualmode())<CR>
+
+nnoremap          <Plug>CljsFireplacePrompt :exe <SID>inputeval()<CR>
+
+noremap!          <Plug>CljsFireplaceRecall <C-R>=<SID>recall()<CR>
+
+""" End Clojurescript plugs
+
+
 function! s:Last(bang, count) abort
   if len(s:history) < a:count
     return 'echoerr "History entry not found"'
@@ -935,7 +1065,7 @@ function! s:Last(bang, count) abort
   return ''
 endfunction
 
-function! s:setup_eval() abort
+function! s:setup_eval_clj()
   command! -buffer -bang -range=0 -nargs=? -complete=customlist,fireplace#eval_complete Eval :exe s:Eval(<bang>0, <line1>, <line2>, <count>, <q-args>)
   command! -buffer -bang -bar -count=1 Last exe s:Last(<bang>0, <count>)
 
@@ -957,6 +1087,23 @@ function! s:setup_eval() abort
   exe 'nmap <buffer> cqc <Plug>FireplacePrompt' . &cedit . 'i'
 
   map! <buffer> <C-R>( <Plug>FireplaceRecall
+endfunction
+
+function! s:setup_eval_cljs()
+  nnoremap <LEADER>ef :echo fireplace#cljs_load_file()<CR>
+  nmap <buffer> cpp :echo fireplace#cljs_eval_expr()<CR>
+  nmap <buffer> cmm :echo fireplace#cljs_macroexpand()<CR>
+  nmap <buffer> K :echo fireplace#cljs_doc()<CR>
+  nmap <buffer> [d :echo fireplace#cljs_source()<CR>
+  command! ChromeRepl :call fireplace#connect_chrome_repl()
+endfunction
+
+function! s:setup_eval() abort
+  if !g:cljs
+    call s:setup_eval_clj()
+  else
+    call s:setup_eval_cljs()
+  endif
 endfunction
 
 function! s:setup_historical()

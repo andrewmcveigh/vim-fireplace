@@ -214,10 +214,17 @@ endfunction
 
 function! s:austin_eval (session, ns_form, expr) dict abort
 
-  let payload = {"op": "load-file",
-        \ "file": join(a:ns_form + [' '] + a:expr, "\n"),
-        \ "file-name": fnamemodify(bufname('%'), ':t'),
-        \ "file-path": expand('%:p')}
+  let ns_response = self.process( {
+        \ "op": "eval",
+        \ "code": join(a:ns_form, "\n"),
+        \ "ns": "user",
+        \ "session": a:session } )
+
+  let payload = {
+        \ "op": "eval",
+        \ "code": join(a:expr, "\n"),
+        \ "ns": ns_response.ns,
+        \ "session": a:session}
 
   if a:session
     let payload.session = a:session
