@@ -527,6 +527,8 @@ function! fireplace#eval(expr) abort
   return fireplace#session_eval(a:expr)
 endfunction
 
+""" Clojurescript support
+
 let g:cljs_repl_session = 0
 
 function! fireplace#cljs_client()
@@ -547,58 +549,6 @@ function! fireplace#cljs_client()
     let client.connection.session = old_session
   endif
   return client
-endfunction
-
-function! fireplace#load_file() abort
-
-  let path = fnamemodify(exists('b:java_root') ? b:java_root : fnamemodify(expand('%'), ':p:s?.*\zs[\/]src[\/].*??'), ':~')
-  let client = s:client()
-
-  if !g:cljs_repl_session
-    let g:cljs_repl_session = client.connection.process({'op': 'clone'})['new-session']
-    echo "new cljs repl session started: ".g:cljs_repl_session
-    let old_session = client.connection.session
-    let client.connection.session = g:cljs_repl_session
-    echo "vim might hang here, refresh your browser to attach browser repl"
-    let payload = {"op": "load-file",
-          \ "file": '(cemerick.austin.repls/cljs-repl' .
-          \ '(reset! cemerick.austin.repls/browser-repl-env' .
-          \ '(cemerick.austin/repl-env)))',
-          \ "file-name": fnamemodify(bufname('%'), ':t'),
-          \ "file-path": expand('%:p')}
-    call client.connection.process(payload)
-    let client.connection.session = old_session
-  endif
-
-  let response = client.connection.load_file(g:cljs_repl_session)
-
-  "if !empty(get(response, 'value', ''))
-    "call insert(s:history, {'buffer': bufnr(''), 'code': a:expr, 'ns': fireplace#ns(), 'response': response})
-  "endif
-  "if len(s:history) > &history
-    "call remove(s:history, &history, -1)
-  "endif
-
-  if !empty(get(response, 'stacktrace', []))
-    let nr = 0
-    if has_key(s:qffiles, expand('%:p'))
-      let nr = winbufnr(s:qffiles[expand('%:p')].buffer)
-    endif
-    if nr != -1
-      call setloclist(nr, fireplace#quickfix_for(response.stacktrace))
-    endif
-  endif
-
-  call s:output_response(response)
-
-  if get(response, 'ex', '') !=# ''
-    let err = 'Clojure: '.response.ex
-  elseif has_key(response, 'value')
-    return response.value[0]
-  else
-    let err = 'fireplace.vim: Something went wrong: '.string(response)
-  endif
-  throw err
 endfunction
 
 function! s:get_expr(start, end)
@@ -714,6 +664,8 @@ function! fireplace#cljs_macroexpand() abort
 
   call s:respond(response)
 endfunction
+
+""" End Clojurescript support
 
 function! fireplace#echo_session_eval(expr) abort
   try
