@@ -195,60 +195,7 @@ function! s:nrepl_call(payload) dict abort
   throw 'nREPL: '.split(out, "\n")[0]
 endfunction
 
-
-function! s:get_expr(start, end)
-  let lines = getline(a:start[0], a:end[0])
-  if len(lines) == 1
-    return [lines[0][a:start[1] - 1 : a:end[1] - 1]]
-  else
-    let first_line = lines[0][a:start[1] - 1 : strlen(lines[0])]
-    let last_line = lines[len(lines) - 1][0 : a:end[1] - 1]
-    return [first_line] + lines[1 : len(lines) -2] + [last_line]
-  endif
-endfunction
-
-" TODO: hack to get load_file to work
-function! s:buffer_contents ()
-  let pos = getpos('.')
-  let buf = getline(1, '$')
-
-  let expr_start = searchpairpos('(','',')', 'bcn', g:fireplace#skip)
-  let expr_end = searchpairpos('(','',')', 'n', g:fireplace#skip)
-
-  call search('\v^\s*\(ns.*', 'bc')
-  let ns_start = searchpairpos('(','',')', 'bcrn', g:fireplace#skip)
-  let ns_end = searchpairpos('(','',')', 'rn', g:fireplace#skip)
-
-  let lines =
-        \ s:get_expr(ns_start, ns_end) +
-        \ [' '] +
-        \ s:get_expr(expr_start, expr_end)
-
-  let send_text = join(lines, "\n")
-
-  call setpos('.', pos)
-
-  "echo send_text
-  "echo join(buf, '\n')
-  return send_text
-  "join(send_text, '\n')
-endfunction
-
-function! s:nrepl_load_file (session) dict abort
-" TODO isn't there an easy way to get the contents of a buffer?
-
-  let payload = {"op": "load-file",
-        \ "file": s:buffer_contents(),
-        \ "file-name": fnamemodify(bufname('%'), ':t'),
-        \ "file-path": expand('%:p')}
-
-  if a:session
-    let payload.session = a:session
-    return self.process(payload)
-  else
-    throw 'no session provided'
-  endif
-endfunction
+""" Clojurescript austin repl support
 
 function! s:austin_load_file (session, file_contents) dict abort
 
@@ -266,7 +213,6 @@ function! s:austin_load_file (session, file_contents) dict abort
 endfunction
 
 function! s:austin_eval (session, ns_form, expr) dict abort
-" TODO isn't there an easy way to get the contents of a buffer?
 
   let payload = {"op": "load-file",
         \ "file": join(a:ns_form + [' '] + a:expr, "\n"),
@@ -280,6 +226,8 @@ function! s:austin_eval (session, ns_form, expr) dict abort
     throw 'no session provided'
   endif
 endfunction
+
+""" End Clojurescript austin repl support
 
 let s:nrepl = {
       \ 'call': s:function('s:nrepl_call'),
