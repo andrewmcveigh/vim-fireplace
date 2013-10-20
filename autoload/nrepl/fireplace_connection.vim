@@ -250,11 +250,43 @@ function! s:nrepl_load_file (session) dict abort
   endif
 endfunction
 
+function! s:austin_load_file (session, file_contents) dict abort
+
+  let payload = {"op": "load-file",
+        \ "file": a:file_contents,
+        \ "file-name": fnamemodify(bufname('%'), ':t'),
+        \ "file-path": expand('%:p')}
+
+  if a:session
+    let payload.session = a:session
+    return self.process(payload)
+  else
+    throw 'no session provided'
+  endif
+endfunction
+
+function! s:austin_eval (session, ns_form, expr) dict abort
+" TODO isn't there an easy way to get the contents of a buffer?
+
+  let payload = {"op": "load-file",
+        \ "file": join(a:ns_form + [' '] + a:expr, "\n"),
+        \ "file-name": fnamemodify(bufname('%'), ':t'),
+        \ "file-path": expand('%:p')}
+
+  if a:session
+    let payload.session = a:session
+    return self.process(payload)
+  else
+    throw 'no session provided'
+  endif
+endfunction
+
 let s:nrepl = {
       \ 'call': s:function('s:nrepl_call'),
       \ 'eval': s:function('s:nrepl_eval'),
       \ 'path': s:function('s:nrepl_path'),
-      \ 'load_file': s:function('s:nrepl_load_file'),
+      \ 'load_file': s:function('s:austin_load_file'),
+      \ 'cljs_eval': s:function('s:austin_eval'),
       \ 'process': s:function('s:nrepl_process')}
 
 if !has('python')

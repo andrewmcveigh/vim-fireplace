@@ -529,6 +529,26 @@ endfunction
 
 let g:cljs_repl_session = 0
 
+function! fireplace#cljs_client()
+  let client = s:client()
+  if !g:cljs_repl_session
+    let g:cljs_repl_session = client.connection.process({'op': 'clone'})['new-session']
+    echo "new cljs repl session started: ".g:cljs_repl_session
+    let old_session = client.connection.session
+    let client.connection.session = g:cljs_repl_session
+    echo "vim might hang here, refresh your browser to attach browser repl"
+    let payload = {"op": "load-file",
+          \ "file": '(cemerick.austin.repls/cljs-repl' .
+          \ '(reset! cemerick.austin.repls/browser-repl-env' .
+          \ '(cemerick.austin/repl-env)))',
+          \ "file-name": fnamemodify(bufname('%'), ':t'),
+          \ "file-path": expand('%:p')}
+    call client.connection.process(payload)
+    let client.connection.session = old_session
+  endif
+  return client
+endfunction
+
 function! fireplace#load_file() abort
 
   let path = fnamemodify(exists('b:java_root') ? b:java_root : fnamemodify(expand('%'), ':p:s?.*\zs[\/]src[\/].*??'), ':~')
@@ -579,6 +599,120 @@ function! fireplace#load_file() abort
     let err = 'fireplace.vim: Something went wrong: '.string(response)
   endif
   throw err
+endfunction
+
+function! s:get_expr(start, end)
+  let lines = getline(a:start[0], a:end[0])
+  if len(lines) == 1
+    return [lines[0][a:start[1] - 1 : a:end[1] - 1]]
+  else
+    let first_line = lines[0][a:start[1] - 1 : strlen(lines[0])]
+    let last_line = lines[len(lines) - 1][0 : a:end[1] - 1]
+    return [first_line] + lines[1 : len(lines) -2] + [last_line]
+  endif
+endfunction
+
+function! s:ns_form()
+  let pos = getpos('.')
+  call search('\v^\s*\(ns.*', 'bc')
+  let form = s:get_expr(
+        \ searchpairpos('(','',')', 'bcrn', g:fireplace#skip),
+        \ searchpairpos('(','',')', 'rn', g:fireplace#skip))
+  call setpos('.', pos)
+  return form
+endfunction
+
+function! s:respond(response)
+  let response = a:response
+  if !empty(get(response, 'stacktrace', []))
+    let nr = 0
+    if has_key(s:qffiles, expand('%:p'))
+      let nr = winbufnr(s:qffiles[expand('%:p')].buffer)
+    endif
+    if nr != -1
+      call setloclist(nr, fireplace#quickfix_for(response.stacktrace))
+    endif
+  endif
+
+  call s:output_response(response)
+
+  if get(response, 'ex', '') !=# ''
+    let err = 'Clojure: '.response.ex
+  elseif has_key(response, 'value')
+    return response.value[0]
+  else
+    let err = 'fireplace.vim: Something went wrong: '.string(response)
+  endif
+  throw err
+endfunction
+
+function! s:get_current_expr()
+  let pos = getpos('.')
+  let expr = s:get_expr(
+        \ searchpairpos('(','',')', 'bcn', g:fireplace#skip),
+        \ searchpairpos('(','',')', 'n', g:fireplace#skip))
+  call setpos('.', pos)
+  return expr
+endfunction
+
+function! fireplace#cljs_eval_expr()
+  let client = fireplace#cljs_client()
+
+  let response = client.connection.cljs_eval(
+        \ g:cljs_repl_session,
+        \ s:ns_form(),
+        \ s:get_current_expr())
+
+  call s:respond(response)
+endfunction
+
+function! fireplace#cljs_load_file()
+  let client = fireplace#cljs_client()
+  let pos = getpos('.')
+  let buf = getline(1, '$')
+
+  let response = client.connection.load_file(
+        \ g:cljs_repl_session,
+        \ join(buf, "\n"))
+
+  call setpos('.', pos)
+
+  call s:respond(response)
+endfunction
+
+function! fireplace#cljs_doc() abort
+  let client = fireplace#cljs_client()
+
+  let response = client.connection.cljs_eval(
+        \ g:cljs_repl_session,
+        \ s:ns_form(),
+        \ '(clojure.reflect/doc ' . expand('<cword>') . ')')
+
+  call s:respond(response)
+endfunction
+
+function! fireplace#cljs_source() abort
+  let client = fireplace#cljs_client()
+
+  let response = client.connection.cljs_eval(
+        \ g:cljs_repl_session,
+        \ s:ns_form(),
+        \ '(clojure.reflect/source ' . expand('<cword>') . ')')
+
+  call s:respond(response)
+endfunction
+
+function! fireplace#cljs_macroexpand() abort
+  let client = fireplace#cljs_client()
+
+  let response = client.connection.cljs_eval(
+        \ g:cljs_repl_session,
+        \ s:ns_form(),
+        \ ['(prn (macroexpand (quote '] +
+        \ s:get_current_expr() +
+        \ [')))'])
+
+  call s:respond(response)
 endfunction
 
 function! fireplace#echo_session_eval(expr) abort
