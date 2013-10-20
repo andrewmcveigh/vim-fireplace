@@ -536,12 +536,17 @@ function! fireplace#load_file() abort
 
   if !g:cljs_repl_session
     let g:cljs_repl_session = client.connection.process({'op': 'clone'})['new-session']
+    echo "new cljs repl session started: ".g:cljs_repl_session
     let old_session = client.connection.session
     let client.connection.session = g:cljs_repl_session
     echo "vim might hang here, refresh your browser to attach browser repl"
-    call client.connection.eval('(cemerick.austin.repls/cljs-repl' .
+    let payload = {"op": "load-file",
+          \ "file": '(cemerick.austin.repls/cljs-repl' .
           \ '(reset! cemerick.austin.repls/browser-repl-env' .
-          \ '(cemerick.austin/repl-env)))')
+          \ '(cemerick.austin/repl-env)))',
+          \ "file-name": fnamemodify(bufname('%'), ':t'),
+          \ "file-path": expand('%:p')}
+    call client.connection.process(payload)
     let client.connection.session = old_session
   endif
 
@@ -569,7 +574,7 @@ function! fireplace#load_file() abort
   if get(response, 'ex', '') !=# ''
     let err = 'Clojure: '.response.ex
   elseif has_key(response, 'value')
-    return response.value
+    return response.value[0]
   else
     let err = 'fireplace.vim: Something went wrong: '.string(response)
   endif

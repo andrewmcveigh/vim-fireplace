@@ -195,9 +195,43 @@ function! s:nrepl_call(payload) dict abort
   throw 'nREPL: '.split(out, "\n")[0]
 endfunction
 
+
+function! s:get_expr(start, end)
+  let lines = getline(a:start[0], a:end[0])
+  if len(lines) == 1
+    return [lines[0][a:start[1] - 1 : a:end[1] - 1]]
+  else
+    let first_line = lines[0][a:start[1] - 1 : strlen(lines[0])]
+    let last_line = lines[len(lines) - 1][0 : a:end[1] - 1]
+    return [first_line] + lines[1 : len(lines) -2] + [last_line]
+  endif
+endfunction
+
 " TODO: hack to get load_file to work
 function! s:buffer_contents ()
-  return join(getline(1, '$'), "\n")
+  let pos = getpos('.')
+  let buf = getline(1, '$')
+
+  let expr_start = searchpairpos('(','',')', 'bcn', g:fireplace#skip)
+  let expr_end = searchpairpos('(','',')', 'n', g:fireplace#skip)
+
+  call search('\v^\s*\(ns.*', 'bc')
+  let ns_start = searchpairpos('(','',')', 'bcrn', g:fireplace#skip)
+  let ns_end = searchpairpos('(','',')', 'rn', g:fireplace#skip)
+
+  let lines =
+        \ s:get_expr(ns_start, ns_end) +
+        \ [' '] +
+        \ s:get_expr(expr_start, expr_end)
+
+  let send_text = join(lines, "\n")
+
+  call setpos('.', pos)
+
+  "echo send_text
+  "echo join(buf, '\n')
+  return send_text
+  "join(send_text, '\n')
 endfunction
 
 function! s:nrepl_load_file (session) dict abort
