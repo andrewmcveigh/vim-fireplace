@@ -612,6 +612,7 @@ function! fireplace#connect_chrome_repl()
   else
     throw "Can't find chrome"
   endif
+  echo 'Chrome loading Browser-REPL @ ' . g:browser_repl_server
 endfunction
 
 function! fireplace#ls_sessions()
@@ -741,7 +742,7 @@ function! fireplace#cljs_macroexpand() abort
   let response = client.connection.cljs_eval(
         \ g:cljs_repl_session,
         \ s:ns_form(),
-        \ ['(prn (macroexpand (quote '] +
+        \ ['(prn (cljs.repl.reflect/macroexpand (quote '] +
         \ s:get_current_expr() +
         \ [')))'])
 
@@ -1090,12 +1091,12 @@ function! s:setup_eval_clj()
 endfunction
 
 function! s:setup_eval_cljs()
-  nnoremap <LEADER>ef :echo fireplace#cljs_load_file()<CR>
+  nmap <buffer> <LEADER>ef :echo fireplace#cljs_load_file()<CR>
   nmap <buffer> cpp :echo fireplace#cljs_eval_expr()<CR>
   nmap <buffer> cmm :echo fireplace#cljs_macroexpand()<CR>
   nmap <buffer> K :echo fireplace#cljs_doc()<CR>
   nmap <buffer> [d :echo fireplace#cljs_source()<CR>
-  command! ChromeRepl :call fireplace#connect_chrome_repl()
+  command! -buffer ChromeRepl :call fireplace#connect_chrome_repl()
 endfunction
 
 function! s:setup_eval() abort
